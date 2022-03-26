@@ -1,1 +1,1 @@
-# SCONE
+# SCONE - Smart Containers
