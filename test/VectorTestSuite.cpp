@@ -16,7 +16,8 @@ class VectorTestSuiteFundamentalType : public ::testing::Test
 {
 };
 
-TYPED_TEST_SUITE(VectorTestSuiteFundamentalType, ::testing::Types<CompactVector<int>>);
+using VectorFundamentalTypes = ::testing::Types<CompactVector<int>, InlineVector<int>>;
+TYPED_TEST_SUITE(VectorTestSuiteFundamentalType, VectorFundamentalTypes);
 
 TYPED_TEST(VectorTestSuiteFundamentalType, testConstruction)
 {
@@ -85,6 +86,12 @@ template <typename VectorType>
 std::vector<int> getCapacities()
 {
     return {0, 1, 3, 3};
+}
+
+template <>
+std::vector<int> getCapacities<InlineVector<int, 1>>()
+{
+    return {1, 1, 3, 3};
 }
 
 TYPED_TEST(VectorTestSuiteFundamentalType, testPushBack)
@@ -257,7 +264,8 @@ class VectorTestSuiteClassType : public ::testing::Test
 {
 };
 
-TYPED_TEST_SUITE(VectorTestSuiteClassType, ::testing::Types<CompactVector<TestType>>);
+using VectorTypes = ::testing::Types<CompactVector<TestType>, InlineVector<TestType>>;
+TYPED_TEST_SUITE(VectorTestSuiteClassType, VectorTypes);
 
 TYPED_TEST(VectorTestSuiteClassType, testConstruction)
 {

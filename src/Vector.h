@@ -40,7 +40,7 @@ public:
     MemoryOptimizedStorage() = default;
 
     MemoryOptimizedStorage(const MemoryOptimizedStorage&) = delete;
-    MemoryOptimizedStorage operator =(const MemoryOptimizedStorage&) = delete;
+    MemoryOptimizedStorage& operator =(const MemoryOptimizedStorage&) = delete;
 
     MemoryOptimizedStorage(MemoryOptimizedStorage&& other)
     {
@@ -136,6 +136,163 @@ private:
 
 private:
     TaggedPtr _ptr;
+};
+
+template <typename T, uint32_t InlineSize>
+class InlineStorage final
+{
+public :
+    using value_type = T;
+
+public:
+    InlineStorage()
+    {
+        init();
+    }
+
+    InlineStorage(const InlineStorage&) = delete;
+    InlineStorage& operator =(const InlineStorage&) = delete;
+
+    InlineStorage(InlineStorage&& other) noexcept(std::is_nothrow_move_assignable<InlineStorage>::value)
+        : InlineStorage()
+    {
+        *this = std::move(other);
+    }
+
+    InlineStorage& operator=(InlineStorage&& other) noexcept(std::is_nothrow_move_constructible<T>::value)
+    {
+        if (this != &other)
+        {
+            free();
+            _capacity = other._capacity;
+            if (other.isInline())
+            {
+                // TODO: Optimize for POD types and unite with Vector::moveData.
+                auto* it = other.data();
+                const auto endIt = it + other._size;
+                for (auto dataIt = data(); it != endIt; ++it, ++dataIt)
+                {
+                    new (dataIt) T(std::move(*it));
+                    ++_size;
+                }
+                other.free();
+            }
+            else
+            {
+                _size = other._size;
+                getHeapDataPtrRef() = other.getHeapDataPtrRef();
+                other.init();
+            }
+        }
+
+        return *this;
+    }
+
+    ~InlineStorage()
+    {
+        free();
+    }
+
+    void allocate(const size_t capacity)
+    {
+        assert(isInline() && _size == 0U);
+        if (capacity > InlineSize)
+        {
+            _capacity = static_cast<uint32_t>(capacity);
+            getHeapDataPtrRef() = operator new(_capacity * sizeof(T));
+        }
+    }
+
+    void free()
+    {
+        auto* it = data();
+        auto* const ptr = (void*)it;
+        StorageDetails::destroy(it, it + _size);
+
+        if (!isInline())
+        {
+            operator delete(ptr);
+        }
+        init();
+    }
+
+    uint32_t size() const
+    {
+        return _size;
+    }
+
+    uint32_t capacity() const
+    {
+        return _capacity;
+    }
+
+    const T* data() const
+    {
+        return data(*this);
+    }
+
+    T* data()
+    {
+        return data(*this);
+    }
+
+    void advanceSize(ptrdiff_t value)
+    {
+        _size += value;
+        assert(size() <= capacity());
+    }
+
+    void swap(InlineStorage& other)
+    {
+        if (isInline() || other.isInline())
+        {
+            InlineStorage tmp = std::move(other);
+            other = std::move(*this);
+            *this = std::move(tmp);
+        }
+        else
+        {
+            std::swap(_capacity, other._capacity);
+            std::swap(_size, other._size);
+            std::swap(getHeapDataPtrRef(), other.getHeapDataPtrRef());
+        }
+    }
+
+private:
+    bool isInline() const
+    {
+        return capacity() == InlineSize;
+    }
+
+    void init()
+    {
+        _capacity = InlineSize;
+        _size = 0U;
+    }
+
+    template <typename Self>
+    static auto data(Self& self)
+    {
+        return !self.isInline() ? *reinterpret_cast<std::conditional_t<std::is_const<Self>::value, T* const, T*>*>(&(self._union))
+                                : reinterpret_cast<std::conditional_t<std::is_const<Self>::value, const T, T>*>(&(self._union));
+    }
+
+    void*& getHeapDataPtrRef()
+    {
+        assert(!isInline());
+        return *reinterpret_cast<void**>(&_union);
+    }
+
+private:
+    static constexpr std::size_t getMax(std::size_t a, std::size_t b)
+    {
+        return (a < b) ? b : a;
+    }
+
+private:
+    uint32_t _capacity;
+    uint32_t _size;
+    std::aligned_storage_t<getMax(sizeof(T[InlineSize]), sizeof(T*)), getMax(alignof(T), alignof(T*))> _union;
 };
 
 } // namespace VectorDetails
